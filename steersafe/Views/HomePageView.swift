@@ -60,6 +60,20 @@ struct HomePageView: View {
                     .padding(.top, 10)
                     .foregroundColor(viewModel.isWarningVisible ? .red : (viewModel.isDriving ? Color(UIColor(red: 0.23, green: 0.86, blue: 0.57, alpha: 1.00)) : .gray))
 
+                /*
+                    // Display current speed and speed limit
+                    if viewModel.isDriving {
+                        Text("Current Speed: \(viewModel.currentSpeed, specifier: "%.2f") km/h")
+                            .font(.system(size: 16))
+                            .foregroundColor(.gray)
+                            .padding(.top, 10)
+
+                        Text("Speed Limit: \(viewModel.speedLimit, specifier: "%.2f") km/h")
+                            .font(.system(size: 16))
+                            .foregroundColor(.gray)
+                            .padding(.top, 2)
+                    }
+                */
                 Spacer()
             }
             .padding()
@@ -109,9 +123,9 @@ struct HomePageView: View {
                 .foregroundColor(.gray)
             
             Text("🚦 Speed Limit Violations: \(viewModel.speedLimitExceeds) time(s)")
-                        .font(.system(size: 16))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .foregroundColor(.gray)
+                .font(.system(size: 16))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .foregroundColor(.gray)
 
             Button(action: {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.6, blendDuration: 0)) {
@@ -135,7 +149,6 @@ struct HomePageView: View {
         .frame(width: 300)
         .padding(.bottom, 50)
     }
-
 
     // Function to show popup with initial scale
     func showPopupWithAnimation() {

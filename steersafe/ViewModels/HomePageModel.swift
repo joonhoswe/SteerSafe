@@ -231,50 +231,21 @@ class HomePageModel: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     // CLLocationManagerDelegate method for handling location updates
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.last else { return }
-        currentLatitude = location.coordinate.latitude
-        currentLongitude = location.coordinate.longitude
-        print("Current Latitude: \(currentLatitude), Current Longitude: \(currentLongitude)")
-
-        fetchSpeedLimit() // Fetch speed limit when the location updates
-        
-        // Calculate current speed in km/h
-        let speedInMetersPerSecond = location.speed
-        let speedInKmH = speedInMetersPerSecond * 3.6
-        
-        // Check if the speed exceeds the speed limit
-        if let speedLimit = speedLimit, speedInKmH > speedLimit {
-            speedLimitExceeds += 1 // Increment the count if speed limit is exceeded
-            print("Speed limit exceeded! Current speed: \(speedInKmH) km/h, Speed limit: \(speedLimit) km/h")
-        }
-    }
-    
-    class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
-        private let locationManager = CLLocationManager()
-        @Published var speedLimit: String = ""
-        private let tomTomAPIKey = (Keys.tomtomApiKey)
-
-        override init() {
-            super.init()
-            locationManager.delegate = self
-            locationManager.requestWhenInUseAuthorization()
-            locationManager.startUpdatingLocation()
-        }
-
-        func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
             if let location = locations.first {
                 let latitude = location.coordinate.latitude
                 let longitude = location.coordinate.longitude
-
-                // Call the TomTom API to get the speed limit for the current location
-                fetchSpeedLimit(lat: latitude, lon: longitude)
+                
+                // Fetch speed limit when driving starts
+                if isDriving {
+                    fetchSpeedLimit(lat: latitude, lon: longitude)
+                }
             }
         }
 
         // Function to fetch speed limit from TomTom API
         private func fetchSpeedLimit(lat: Double, lon: Double) {
             let radius = 100
-            let urlString = "https://api.tomtom.com/search/2/search/around.json?lat=\(lat)&lon=\(lon)&radius=\(radius)&key=\(tomTomAPIKey)"
+            let urlString = "https://api.tomtom.com/search/2/search/around.json?lat=\(lat)&lon=\(lon)&radius=\(radius)&key=\(Keys.tomtomApiKey))"
             
             guard let url = URL(string: urlString) else {
                 print("Invalid URL")
@@ -287,25 +258,31 @@ class HomePageModel: NSObject, ObservableObject, CLLocationManagerDelegate {
                     return
                 }
 
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("Raw Response: \(responseString)")
+                }
+                
                 do {
-                    // Parse the JSON response
                     if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
                        let results = json["results"] as? [[String: Any]] {
-                        // Process the results (this is where you'd find speed limits)
-                        DispatchQueue.main.async {
-                            if results.first != nil {
-                                self?.speedLimit = "Speed Limit Found"
-                            } else {
-                                self?.speedLimit = "No Speed Limit Data"
-                            }
+                        
+                        if let firstResult = results.first,
+                           let poi = firstResult["poi"] as? [String: Any],
+                           let speedLimits = poi["speedLimits"] as? [String: Any],
+                           let postedSpeedLimit = speedLimits["postedSpeedLimit"] as? Double {
+                            
+                            print("Speed limit found: \(postedSpeedLimit) km/h")
+                            self?.speedLimit = postedSpeedLimit
+                            print("Speed limit found: \(postedSpeedLimit) km/h")
+                        } else {
+                            print("No Speed Limit Data")
                         }
                     }
                 } catch {
-                    print("Error parsing response: \(error.localizedDescription)")
+                    print("Error parsing JSON: \(error.localizedDescription)")
                 }
             }
             
             task.resume()
         }
     }
-}
