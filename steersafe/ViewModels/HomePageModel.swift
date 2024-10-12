@@ -8,6 +8,8 @@ import CoreLocation
 class HomePageModel: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let motionManager = CMMotionManager()
     private let locationManager = CLLocationManager()
+    private var initialLocation: CLLocation?
+    private var lastLocation: CLLocation?
     
     @Published var isDriving: Bool = false
     @Published var time: TimeInterval = 0  // Total time in seconds
@@ -21,7 +23,8 @@ class HomePageModel: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var currentLongitude: Double = 0.0
     @Published var speedLimit: Double? // Speed limit on the road
     @Published var speedLimitExceeds: Int = 0 // Count of speed limit exceeds
-
+    @Published var isStationaryVisible: Bool = false
+    
     private var lastPickupTime: Date?  // Track the last time a pickup was registered
     private var startTime: Date?            // Track when driving started
     private var timer: Timer?               // Timer for elapsed time tracking
@@ -56,7 +59,7 @@ class HomePageModel: NSObject, ObservableObject, CLLocationManagerDelegate {
 
         let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
             if let error = error {
-                print("Error fetching speed limit: \(error)")
+                print("Error fetching speed limit: \(error.localizedDescription)")
                 return
             }
 
@@ -78,7 +81,7 @@ class HomePageModel: NSObject, ObservableObject, CLLocationManagerDelegate {
                     print("Could not parse speed limit information")
                 }
             } catch {
-                print("Error parsing JSON: \(error)")
+                print("Error parsing JSON: \(error.localizedDescription)")
             }
         }
 
@@ -93,10 +96,16 @@ class HomePageModel: NSObject, ObservableObject, CLLocationManagerDelegate {
         currPickups = 0  // Reset currPickups for the current session
         startTime = Date()  // Set start time when driving begins
 
+        if let currentLocation = lastLocation {
+            initialLocation = currentLocation
+        }
         // Start a timer to update elapsed time every second
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             if let startTime = self.startTime {
                 self.time = Date().timeIntervalSince(startTime)
+                if self.time >= 15 {
+                    self.checkIfStationary() // Check if stationary after 15 seconds
+                }
             }
         }
 
@@ -121,40 +130,40 @@ class HomePageModel: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     // Function to start receiving accelerometer updates
     func startAccelUpdates() {
-            print("started measuring accel")
-            if motionManager.isAccelerometerAvailable {
-                print("accel available")
-                motionManager.accelerometerUpdateInterval = 0.05  // Update interval
+        print("started measuring accel")
+        if motionManager.isAccelerometerAvailable {
+            print("accel available")
+            motionManager.accelerometerUpdateInterval = 0.05  // Update interval
 
-                // Start updates for accelerometer data
-                motionManager.startAccelerometerUpdates(to: OperationQueue.main) { [weak self] data, error in
-                    if let accelerometerData = data {
-                        // Update the z-axis acceleration value
-                        self?.zAccel = accelerometerData.acceleration.z
+            // Start updates for accelerometer data
+            motionManager.startAccelerometerUpdates(to: OperationQueue.main) { [weak self] data, error in
+                if let accelerometerData = data {
+                    // Update the z-axis acceleration value
+                    self?.zAccel = accelerometerData.acceleration.z
 
-                        // Check if the phone is being moved too much (e.g., user picks up the phone)
-                        let movementThreshold = 0.1  // Set a reasonable threshold for detecting a phone pickup
-                        
-                        if accelerometerData.acceleration.z > movementThreshold {
-                            let now = Date()
-                            if let lastPickup = self?.lastPickupTime {
-                                // Check if 5 seconds have passed since the last pickup to debounce the input
-                                if now.timeIntervalSince(lastPickup) > 5.0 {
-                                    self?.registerPickup(now)
-                                }
-                            } else {
-                                // No previous pickup, register the first one
+                    // Check if the phone is being moved too much (e.g., user picks up the phone)
+                    let movementThreshold = 0.1  // Set a reasonable threshold for detecting a phone pickup
+                    
+                    if accelerometerData.acceleration.z > movementThreshold {
+                        let now = Date()
+                        if let lastPickup = self?.lastPickupTime {
+                            // Check if 5 seconds have passed since the last pickup to debounce the input
+                            if now.timeIntervalSince(lastPickup) > 5.0 {
                                 self?.registerPickup(now)
                             }
+                        } else {
+                            // No previous pickup, register the first one
+                            self?.registerPickup(now)
                         }
-                    } else if let error = error {
-                        print("Accelerometer error: \(error.localizedDescription)")
                     }
+                } else if let error = error {
+                    print("Accelerometer error: \(error.localizedDescription)")
                 }
-            } else {
-                print("Accelerometer is not available.")
             }
+        } else {
+            print("Accelerometer is not available.")
         }
+    }
 
     // Function to stop accelerometer updates
     func stopAccelUpdates() {
@@ -179,6 +188,30 @@ class HomePageModel: NSObject, ObservableObject, CLLocationManagerDelegate {
         }
     }
 
+    // Function to check if the user has moved after 15 seconds
+    private func checkIfStationary() {
+        guard let currentLocation = lastLocation else {
+            print("Last location is not available.")
+            return
+        }
+        let distanceMoved = initialLocation?.distance(from: currentLocation) ?? 0
+        let stationaryThreshold: CLLocationDistance = 0.1 // Movement less than 5 meters is considered stationary
+
+        //User did not move
+        if distanceMoved < stationaryThreshold {
+            isStationaryVisible = true
+            //Reset
+            stopDriving()
+            warningTimer?.invalidate()
+            //Close please start moving display
+            warningTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
+                self?.isStationaryVisible = false
+            }
+        } else {
+            isStationaryVisible = false
+        }
+    }
+
     // Function to update user's tokens and hoursDriven in Firebase
     private func updateUserStats() {
         guard let uid = Auth.auth().currentUser?.uid else {
@@ -197,92 +230,40 @@ class HomePageModel: NSObject, ObservableObject, CLLocationManagerDelegate {
                 if let tokens = userData["tokens"] as? Int {
                     existingTokens = tokens
                 }
-                
                 // Fetch existing hours driven
                 if let hoursDriven = userData["hoursDriven"] as? Double {
                     existingHoursDriven = hoursDriven
                 }
             }
-            // Calculate new tokens and hours driven
+            
+            // Update user's tokens and hoursDriven
             let newTokens = existingTokens + self.coins
-            let hoursThisSession = self.time / 3600.0  // Convert time from seconds to hours
-            let newHoursDriven = existingHoursDriven + hoursThisSession
+            let newHoursDriven = existingHoursDriven + (self.time / 3600) // Convert seconds to hours
             
-            // Prepare updated user data
-            let updatedUserData: [String: Any] = [
+            ref.child("users").child(uid).updateChildValues([
                 "tokens": newTokens,
-                "hoursDriven": newHoursDriven,
-                "lastTokens": self.coins,
-                "lastHoursDriven": hoursThisSession
-            ]
-            
-            // Update the user's data in Firebase Realtime Database
-            ref.child("users").child(uid).updateChildValues(updatedUserData) { error, _ in
+                "hoursDriven": newHoursDriven
+            ]) { error, _ in
                 if let error = error {
-                    print("Error updating user data: \(error.localizedDescription)")
+                    print("Error updating user stats: \(error.localizedDescription)")
                 } else {
-                    print("User data updated successfully!")
+                    print("User stats updated successfully: Tokens: \(newTokens), Hours Driven: \(newHoursDriven) hours")
                 }
             }
-        } withCancel: { error in
-            print("Error fetching user data: \(error.localizedDescription)")
         }
     }
 
-    // CLLocationManagerDelegate method for handling location updates
+    // Location Manager Delegate methods
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-            if let location = locations.first {
-                let latitude = location.coordinate.latitude
-                let longitude = location.coordinate.longitude
-                
-                // Fetch speed limit when driving starts
-                if isDriving {
-                    fetchSpeedLimit(lat: latitude, lon: longitude)
-                }
-            }
-        }
-
-        // Function to fetch speed limit from TomTom API
-        private func fetchSpeedLimit(lat: Double, lon: Double) {
-            let radius = 100
-            let urlString = "https://api.tomtom.com/search/2/search/around.json?lat=\(lat)&lon=\(lon)&radius=\(radius)&key=\(Keys.tomtomApiKey))"
-            
-            guard let url = URL(string: urlString) else {
-                print("Invalid URL")
-                return
-            }
-            
-            let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
-                guard let data = data, error == nil else {
-                    print("Error fetching speed limit: \(error?.localizedDescription ?? "Unknown error")")
-                    return
-                }
-
-                if let responseString = String(data: data, encoding: .utf8) {
-                    print("Raw Response: \(responseString)")
-                }
-                
-                do {
-                    if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-                       let results = json["results"] as? [[String: Any]] {
-                        
-                        if let firstResult = results.first,
-                           let poi = firstResult["poi"] as? [String: Any],
-                           let speedLimits = poi["speedLimits"] as? [String: Any],
-                           let postedSpeedLimit = speedLimits["postedSpeedLimit"] as? Double {
-                            
-                            print("Speed limit found: \(postedSpeedLimit) km/h")
-                            self?.speedLimit = postedSpeedLimit
-                            print("Speed limit found: \(postedSpeedLimit) km/h")
-                        } else {
-                            print("No Speed Limit Data")
-                        }
-                    }
-                } catch {
-                    print("Error parsing JSON: \(error.localizedDescription)")
-                }
-            }
-            
-            task.resume()
-        }
+        guard let location = locations.last else { return }
+        lastLocation = location
+        currentLatitude = location.coordinate.latitude
+        currentLongitude = location.coordinate.longitude
+        print("Current Location: \(currentLatitude), \(currentLongitude)")
+        fetchSpeedLimit()  // Fetch the speed limit whenever the location updates
     }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print("Failed to find user's location: \(error.localizedDescription)")
+    }
+}

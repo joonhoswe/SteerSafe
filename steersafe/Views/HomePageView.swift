@@ -54,11 +54,14 @@ struct HomePageView: View {
                 .cornerRadius(100)
 
                 // Dynamic Text under the wheel
-                Text(viewModel.isWarningVisible ? "get off your phone!" : (viewModel.isDriving ? "stay focused" : "tap the wheel to start"))
+                Text(viewModel.isWarningVisible ? "get off your phone!" :
+                     (viewModel.isStationaryVisible ? "please start moving" :
+                     (viewModel.isDriving ? "stay focused" : "tap the wheel to start")))
                     .font(.system(size: 20))
                     .multilineTextAlignment(.center)
                     .padding(.top, 10)
-                    .foregroundColor(viewModel.isWarningVisible ? .red : (viewModel.isDriving ? Color(UIColor(red: 0.23, green: 0.86, blue: 0.57, alpha: 1.00)) : .gray))
+                    .foregroundColor(viewModel.isWarningVisible || viewModel.isStationaryVisible ? .red :
+                                    (viewModel.isDriving ? Color(UIColor(red: 0.23, green: 0.86, blue: 0.57, alpha: 1.00)) : .gray))
 
                 /*
                     // Display current speed and speed limit
