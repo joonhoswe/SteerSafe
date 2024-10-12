@@ -19,6 +19,8 @@ class HomePageModel: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var currPickups: Int = 0     // Pickups during the current session
     @Published var isWarningVisible: Bool = false  // Show warning for 5 seconds
     
+    @Published var initialLatitude: Double = 0.0
+    @Published var initialLongitude: Double = 0.0
     @Published var currentLatitude: Double = 0.0
     @Published var currentLongitude: Double = 0.0
     @Published var speedLimit: Double? // Speed limit on the road
@@ -50,8 +52,10 @@ class HomePageModel: NSObject, ObservableObject, CLLocationManagerDelegate {
 
         let apiKey = Keys.tomtomApiKey
         print("TomTom API Key: \(Keys.tomtomApiKey)")
-        let urlString = "https://api.tomtom.com/traffic/services/5/traffic/speedLimit/\(currentLatitude)/\(currentLongitude).json?key=\(apiKey)"
+        let urlString = "https://api.tomtom.com/snap-to-roads/1/snap-to-roads?points=\(initialLongitude),\(initialLatitude);\(currentLongitude),\(currentLatitude)&fields={projectedPoints{type,geometry{type,coordinates},properties{routeIndex}},route{type,geometry{type,coordinates},properties{id,speedRestrictions{maximumSpeed{value,unit}}}}}&key=\(apiKey)"
 
+
+//        print("Url \(urlString)")
         guard let url = URL(string: urlString) else {
             print("Invalid URL")
             return
@@ -67,15 +71,25 @@ class HomePageModel: NSObject, ObservableObject, CLLocationManagerDelegate {
                 print("No data received")
                 return
             }
+            if let jsonString = String(data: data, encoding: .utf8) {
+                        print("Raw Data: \(jsonString)")
+            } else {
+                print("Failed to convert data to string")
+            }
 
             // Parse the JSON response
             do {
                 if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-                   let speedLimitInfo = json["speedLimit"] as? [String: Any],
-                   let speedLimit = speedLimitInfo["speedLimit"] as? Double {
+                   let routeArray = json["route"] as? [[String: Any]],
+                   let firstRoute = routeArray.first,
+                   let properties = firstRoute["properties"] as? [String: Any],
+                   let speedRestrictions = properties["speedRestrictions"] as? [String: Any],
+                   let maximumSpeed = speedRestrictions["maximumSpeed"] as? [String: Any],
+                   let speedLimitValue = maximumSpeed["value"] as? Double {
+                                        
                     DispatchQueue.main.async {
-                        self?.speedLimit = speedLimit
-                        print("Speed Limit: \(speedLimit) km/h")
+                        self?.speedLimit = speedLimitValue
+                        print("Speed Limit: \(speedLimitValue) mph")
                     }
                 } else {
                     print("Could not parse speed limit information")
@@ -97,7 +111,8 @@ class HomePageModel: NSObject, ObservableObject, CLLocationManagerDelegate {
         startTime = Date()  // Set start time when driving begins
 
         if let currentLocation = lastLocation {
-            initialLocation = currentLocation
+            initialLatitude = lastLocation?.coordinate.latitude ?? 0.0
+            initialLongitude = lastLocation?.coordinate.longitude ?? 0.0
         }
         // Start a timer to update elapsed time every second
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
@@ -260,6 +275,14 @@ class HomePageModel: NSObject, ObservableObject, CLLocationManagerDelegate {
         currentLatitude = location.coordinate.latitude
         currentLongitude = location.coordinate.longitude
         print("Current Location: \(currentLatitude), \(currentLongitude)")
+        
+        if initialLocation == nil, let currentLocation = lastLocation{
+            initialLocation = currentLocation
+            initialLatitude = currentLocation.coordinate.latitude
+            initialLongitude = currentLocation.coordinate.longitude
+            print("Initial Location set to: \(initialLatitude), \(initialLongitude)")
+        }
+        
         fetchSpeedLimit()  // Fetch the speed limit whenever the location updates
     }
 
