@@ -107,6 +107,11 @@ struct HomePageView: View {
                 .font(.system(size: 16))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .foregroundColor(.gray)
+            
+            Text("🚦 Speed Limit Violations: \(viewModel.speedLimitExceeds) time(s)")
+                        .font(.system(size: 16))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .foregroundColor(.gray)
 
             Button(action: {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.6, blendDuration: 0)) {

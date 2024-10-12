@@ -1,5 +1,5 @@
 {
-  "originHash" : "c63c63846d9c539229e96de38d6af51417e28c0ee9a0bc48bd0f0f19d923c329",
+  "originHash" : "e124bdec15239bc083c6e6489f2f40cde15d6d19e1d3248e17ba8307245f5b73",
   "pins" : [
     {
       "identity" : "abseil-cpp-binary",
@@ -116,6 +116,15 @@
       "state" : {
         "revision" : "ebc7251dd5b37f627c93698e4374084d98409633",
         "version" : "1.28.2"
+      }
+    },
+    {
+      "identity" : "tomtom-sdk-spm-core",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tomtom-international/tomtom-sdk-spm-core",
+      "state" : {
+        "revision" : "c23420a7e9a1d45114e5f14405532cbfb2bcb83b",
+        "version" : "0.64.0"
       }
     }
   ],
