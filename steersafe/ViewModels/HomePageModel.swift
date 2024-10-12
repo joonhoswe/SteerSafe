@@ -248,4 +248,64 @@ class HomePageModel: NSObject, ObservableObject, CLLocationManagerDelegate {
             print("Speed limit exceeded! Current speed: \(speedInKmH) km/h, Speed limit: \(speedLimit) km/h")
         }
     }
+    
+    class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+        private let locationManager = CLLocationManager()
+        @Published var speedLimit: String = ""
+        private let tomTomAPIKey = (Keys.tomtomApiKey)
+
+        override init() {
+            super.init()
+            locationManager.delegate = self
+            locationManager.requestWhenInUseAuthorization()
+            locationManager.startUpdatingLocation()
+        }
+
+        func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+            if let location = locations.first {
+                let latitude = location.coordinate.latitude
+                let longitude = location.coordinate.longitude
+
+                // Call the TomTom API to get the speed limit for the current location
+                fetchSpeedLimit(lat: latitude, lon: longitude)
+            }
+        }
+
+        // Function to fetch speed limit from TomTom API
+        private func fetchSpeedLimit(lat: Double, lon: Double) {
+            let radius = 100
+            let urlString = "https://api.tomtom.com/search/2/search/around.json?lat=\(lat)&lon=\(lon)&radius=\(radius)&key=\(tomTomAPIKey)"
+            
+            guard let url = URL(string: urlString) else {
+                print("Invalid URL")
+                return
+            }
+            
+            let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+                guard let data = data, error == nil else {
+                    print("Error fetching speed limit: \(error?.localizedDescription ?? "Unknown error")")
+                    return
+                }
+
+                do {
+                    // Parse the JSON response
+                    if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                       let results = json["results"] as? [[String: Any]] {
+                        // Process the results (this is where you'd find speed limits)
+                        DispatchQueue.main.async {
+                            if results.first != nil {
+                                self?.speedLimit = "Speed Limit Found"
+                            } else {
+                                self?.speedLimit = "No Speed Limit Data"
+                            }
+                        }
+                    }
+                } catch {
+                    print("Error parsing response: \(error.localizedDescription)")
+                }
+            }
+            
+            task.resume()
+        }
+    }
 }
